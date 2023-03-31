@@ -1,2 +1,2 @@
-# AP-2 Versuch90 - Gamma spectroscopy
+# AP-2 Versuch 90 - Gamma spectroscopy
 
