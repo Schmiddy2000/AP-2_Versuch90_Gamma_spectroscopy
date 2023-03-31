@@ -50,8 +50,6 @@ def getCorrectedCountsWithErrors(file_path, background_file_path, measurement_ti
     corrected_count_rate_error = np.sqrt(count_rate_error[:max_index] ** 2
                                          + adjusted_background_count_rate_error[:max_index] ** 2)
 
-    print(len(corrected_count_rate), len(corrected_count_rate_error))
-
     return np.array(corrected_count_rate_range), np.array(corrected_count_rate), \
         np.array(corrected_count_rate_error)
 
