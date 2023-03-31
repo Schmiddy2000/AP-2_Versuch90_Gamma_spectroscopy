@@ -29,18 +29,31 @@ def getDataframe(file_path):
 def get_x_range(df_counts): return np.arange(0, len(df_counts) / 5, 0.2)
 
 
-def getCorrectedCounts(file_path, background_file_path, measurement_time=75, background_measurement_time=150):
+def getCorrectedCountsWithErrors(file_path, background_file_path, measurement_time=75,
+                                 background_measurement_time=150):
     time_ratio = measurement_time / background_measurement_time
 
     counts = getDataframe(file_path).values
-    background_counts = getDataframe(background_file_path).values * time_ratio
+    background_counts = getDataframe(background_file_path).values
+
+    count_rate = counts / measurement_time
+    background_count_rate = background_counts / background_measurement_time
 
     max_index = min(len(counts), len(background_counts))
 
-    corrected_counts = counts[:max_index] - background_counts[:max_index]
-    corrected_count_range = get_x_range(corrected_counts)
+    count_rate_error = np.sqrt(counts) / measurement_time
+    adjusted_background_count_rate_error = np.sqrt(background_counts * time_ratio) / measurement_time
 
-    return corrected_count_range, corrected_counts
+    corrected_count_rate = count_rate[:max_index] - background_count_rate[:max_index]
+    corrected_count_rate_range = get_x_range(corrected_count_rate)
+
+    corrected_count_rate_error = np.sqrt(count_rate_error[:max_index] ** 2
+                                         + adjusted_background_count_rate_error[:max_index] ** 2)
+
+    print(len(corrected_count_rate), len(corrected_count_rate_error))
+
+    return np.array(corrected_count_rate_range), np.array(corrected_count_rate), \
+        np.array(corrected_count_rate_error)
 
 
 Na22_counts = getDataframe(path_Na22).values
@@ -51,7 +64,7 @@ Na22_background_range = get_x_range(Na22_background_counts)
 Na_combined_counts = Na22_counts - Na22_background_counts[:705]
 Na_combined_range = get_x_range(Na_combined_counts)
 
-print(len(Na22_background_counts), len(Na22_counts))
+# print(len(Na22_background_counts), len(Na22_counts))
 
 Co60_counts = getDataframe(path_Co60).values
 Co60_range = get_x_range(Co60_counts)
@@ -65,26 +78,34 @@ Cs137_range = get_x_range(Cs137_counts)
 label_array = np.array(["Na-22", "Co-60", "Cs-137"])
 
 
-def createPlot(x_range, counts):
+def createPlot(file_path, background_file_path, show_errors=True, show_line=True, show_dots=False):
+    plt.figure(figsize=(12, 5))
+    plt.title('Spektrum der Kanäle')
+    plt.xlabel('Kanalnummer (in 0,2er Schritten)')
+    plt.ylabel('Zahlrate in [s$^{-1}$]')
+
+    x_range, count_rate, count_rate_error = getCorrectedCountsWithErrors(file_path, background_file_path)
+
+    if show_errors:
+        upper = (count_rate + count_rate_error).flatten()
+        lower = (count_rate - count_rate_error).flatten()
+
+        plt.fill_between(x_range, upper, lower, where=upper >= lower, interpolate=True, alpha=0.5,
+                         label='Konfidenzband')
+
+    if show_line:
+        plt.plot(x_range, count_rate, lw=0.6, c='black', label='Verbindungslinie')
+
+    if show_dots:
+        plt.scatter(x_range, count_rate, s=3, label='Messwerte')
+
+    plt.xlim(min(x_range), max(x_range))
+    plt.subplots_adjust(top=0.95, bottom=0.1, left=0.07, right=0.95)
+    plt.legend()
+
+    return None
 
 
+createPlot(path_Na22, path_Na22_background)
 
-plt.figure(figsize=(12, 5))
-
-# plt.scatter(Na22_range, Na22, s=3)
-
-plt.plot(*getCorrectedCounts(path_Na22, path_Na22_background), lw=0.7)
-
-# for i in range(0, len(counts_array)):
-#     print(range_array[i], counts_array[i])
-#     plt.scatter(range_array[i], counts_array[i], s=3, label= label_array[i])
-
-# plt.scatter(Na22_range, Na22_counts, s=3, label=label_array[0])
-# plt.scatter(Na22_background_range, Na22_background_counts, s=3, label="Na-22 Hintergrund")
-# plt.scatter(Na_combined_range, Na_combined_counts, s=3, label="Na-22 Kombiniert")
-# plt.scatter(Co60_range, Co60_counts, s=3, label=label_array[1])
-# plt.scatter(Cs137_range, Cs137_counts, s=3, label=label_array[2])
-
-
-# plt.legend()
 plt.show()
