@@ -77,7 +77,7 @@ def getCorrectedCountsWithErrors(file_path, background_file_path, measurement_ti
 
 
 def createPlot(file_path, background_file_path, do_gaussian=False, show_errors=True, show_line=True,
-               show_dots=False):
+               show_dots=False, show_bars=False, upper_x_lim=None):
 
     name_pre = file_path.split('/')
     name = name_pre[len(name_pre) - 1].split('.')[0]
@@ -96,12 +96,20 @@ def createPlot(file_path, background_file_path, do_gaussian=False, show_errors=T
                          label='Konfidenzband')
 
     if show_line:
-        plt.plot(x_range, count_rate, lw=0.4, c='black', label='Verbindungslinie')
+        plt.semilogy(x_range, count_rate, lw=0.4, c='black', label='Verbindungslinie')
+
+    if show_bars:
+        plt.bar(x_range, count_rate, width=0.2, color='black', label='Korrigierte Zählrate')
+        plt.ylim(0, None)
 
     if show_dots:
         plt.scatter(x_range, count_rate, s=1, label='Messwerte')
 
-    plt.xlim(min(x_range), max(x_range))
+    if upper_x_lim is None:
+        plt.xlim(min(x_range), max(x_range))
+    else:
+        plt.xlim(min(x_range), upper_x_lim)
+
     plt.legend()
 
     if do_gaussian:
@@ -121,14 +129,13 @@ def r(x): return round(x, 3)
 def make_gaussian(file_path, background_file_path):
     # Example x and y data (replace these with your actual data points)
     x_data, y_data, y_data_errors = getCorrectedCountsWithErrors(file_path, background_file_path)
-    min_index = int(67.6 * 5)
-    max_index = int(74 * 5) + 1
+    min_index = int(min_channel * 5)
+    max_index = int(max_channel * 5) + 1
     x_data = x_data[min_index:max_index]
     y_data = y_data[min_index:max_index]
 
     mean_guess = x_data[np.argmax(y_data)]
     amplitude_guess = max(y_data)
-    FWHM = 4.97
     stddev_guess = FWHM / (2 * np.sqrt(2 * np.log(2)))
 
     initial_guesses = (amplitude_guess, mean_guess, stddev_guess)
@@ -154,13 +161,34 @@ def make_gaussian(file_path, background_file_path):
     return this_x_lin, this_popt
 
 
+def FitChannelsAndEnergie():
+    channels = np.array([28.178, 66.397, 36.078, 62.395, 70.991])
+    energies = np.array([511, 1277, 662, 1172.6, 1332.75])
+    channel_lin = np.linspace(0, 140)
+
+    def lin_model(x, a, c): return a * x + c
+
+    popt_lin, pcov_lin = curve_fit(lin_model, channels, energies)
+
+    plt.plot(channel_lin, lin_model(channel_lin, *popt_lin), lw=1, ls='--', c='black')
+    print('a =', popt_lin[0], 'and c =', popt_lin[1])
+
+    plt.scatter(channels, energies, marker='x', c='b')
+
+
 plt.figure(figsize=(12, 5))
 
-createPlot(path_Co60, path_Co60_background, do_gaussian=False)
+min_channel = 70
+max_channel = 82.4
+FWHM = 5.3
+
+
+createPlot(path_unknown1_v2, path_unknown1_v2_background, do_gaussian=False, show_line=False, show_errors=False,
+           show_bars=True)
 
 plt.subplots_adjust(top=0.95, bottom=0.1, left=0.07, right=0.95)
 
-# plt.savefig('Na-22_Gaussian_fit_demonstration.png', dpi=300)
+# plt.savefig('Co-66_gamma_spectrum.png', dpi=300)
 plt.show()
 
 
@@ -208,6 +236,14 @@ plt.show()
 
 # ----- Unknown elements:
 
-# Unknown 1:
-# --- Peak 1:
-#
+# Unknown 1 (v2 is probably better):
+# --- Peak 1 (is it there ?):
+
+# --- Peak 2 (@ approx. 75):
+# Array indices: [350:413]
+# Initial guesses: (0.22, 75.0, 2.251)
+# Optimized Amplitude: 0.10475641692909951
+# Optimized Mean: 76.1656184330993
+# Optimized Stddev: 5.957252853489777
+
+
