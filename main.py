@@ -34,6 +34,24 @@ path_unknown3_background = folder_path + "Unbekannt1_Untergrund1.txt"
 path_unknown4 = folder_path + "Unbekannt4_M1.txt"
 path_unknown4_background = folder_path + "Co60_Untergrund_1.txt"
 
+# Transformation:
+
+transformation_best_a = 19.527092931791685
+transformation_best_a_error = 0.37824305141761233
+transformation_best_c = -40.112818123466205
+transformation_best_c_error = 21.016868706506088
+
+
+def transformToEnergies(x_array, with_errors=False):
+    best_energie = transformation_best_a * x_array + transformation_best_c
+
+    if with_errors:
+        best_energie_error = np.sqrt((x_array * transformation_best_a_error) ** 2
+                                     + transformation_best_c_error ** 2)
+        return best_energie, best_energie_error
+    else:
+        return best_energie
+
 
 def getDataframe(file_path):
     with open(file_path, 'rb') as f:
@@ -77,7 +95,7 @@ def getCorrectedCountsWithErrors(file_path, background_file_path, measurement_ti
 
 
 def createPlot(file_path, background_file_path, do_gaussian=False, show_errors=True, show_line=True,
-               show_dots=False, show_bars=False, upper_x_lim=None):
+               show_dots=False, show_bars=False, upper_x_lim=None, transform_to_energies=False):
 
     name_pre = file_path.split('/')
     name = name_pre[len(name_pre) - 1].split('.')[0]
@@ -88,6 +106,9 @@ def createPlot(file_path, background_file_path, do_gaussian=False, show_errors=T
 
     x_range, count_rate, count_rate_error = getCorrectedCountsWithErrors(file_path, background_file_path)
 
+    if transform_to_energies:
+        x_range = transformToEnergies(x_range)
+
     if show_errors:
         upper = count_rate + count_rate_error
         lower = count_rate - count_rate_error
@@ -96,7 +117,7 @@ def createPlot(file_path, background_file_path, do_gaussian=False, show_errors=T
                          label='Konfidenzband')
 
     if show_line:
-        plt.semilogy(x_range, count_rate, lw=0.4, c='black', label='Verbindungslinie')
+        plt.plot(x_range, count_rate, lw=0.4, c='black', label='Verbindungslinie')
 
     if show_bars:
         plt.bar(x_range, count_rate, width=0.2, color='black', label='Korrigierte Zählrate')
@@ -113,7 +134,11 @@ def createPlot(file_path, background_file_path, do_gaussian=False, show_errors=T
     plt.legend()
 
     if do_gaussian:
-        x_lin, popt = make_gaussian(file_path, background_file_path)
+        if transform_to_energies:
+            x_lin, popt = make_gaussian(file_path, background_file_path, transform_to_energies)
+        else:
+            x_lin, popt = make_gaussian(file_path, background_file_path)
+
         plt.plot(x_lin, gaussian(x_lin, *popt), lw=1, ls='--', c='r')
 
     return None
@@ -126,9 +151,13 @@ def gaussian(x, amplitude, mean, stddev):
 def r(x): return round(x, 3)
 
 
-def make_gaussian(file_path, background_file_path):
+def make_gaussian(file_path, background_file_path, transform_to_energies=False):
     # Example x and y data (replace these with your actual data points)
     x_data, y_data, y_data_errors = getCorrectedCountsWithErrors(file_path, background_file_path)
+
+    if transform_to_energies:
+        x_data = transformToEnergies(x_data)
+
     min_index = int(min_channel * 5)
     max_index = int(max_channel * 5) + 1
     x_data = x_data[min_index:max_index]
@@ -161,7 +190,7 @@ def make_gaussian(file_path, background_file_path):
     return this_x_lin, this_popt
 
 
-def FitChannelsAndEnergie():
+def FitChannelsAndEnergies():
     channels = np.array([28.178, 66.397, 36.078, 62.395, 70.991])
     energies = np.array([511, 1277, 662, 1172.6, 1332.75])
     channel_lin = np.linspace(0, 140)
@@ -170,10 +199,24 @@ def FitChannelsAndEnergie():
 
     popt_lin, pcov_lin = curve_fit(lin_model, channels, energies)
 
+    best_a = popt_lin[0]
+    best_c = popt_lin[1]
+
+    best_a_err = np.sqrt(pcov_lin[0][0])
+    best_c_err = np.sqrt(pcov_lin[1][1])
+
+    upper = lin_model(channel_lin, best_a + best_a_err, best_c - best_c_err)
+    lower = lin_model(channel_lin, best_a - best_a_err, best_c + best_c_err)
+
+    plt.fill_between(channel_lin, upper, lower, where=upper >= lower, interpolate=True, color='pink', alpha=0.5)
+    plt.fill_between(channel_lin, upper, lower, where=upper < lower, interpolate=True, color='pink', alpha=0.5)
+
     plt.plot(channel_lin, lin_model(channel_lin, *popt_lin), lw=1, ls='--', c='black')
-    print('a =', popt_lin[0], 'and c =', popt_lin[1])
+    print('a =', best_a, '+-', best_a_err, '\nc =', best_c, '+-', best_c_err)
 
     plt.scatter(channels, energies, marker='x', c='b')
+
+    return best_a, best_c, best_a_err, best_c_err
 
 
 plt.figure(figsize=(12, 5))
@@ -182,9 +225,10 @@ min_channel = 70
 max_channel = 82.4
 FWHM = 5.3
 
+# FitChannelsAndEnergies()
 
-createPlot(path_unknown1_v2, path_unknown1_v2_background, do_gaussian=False, show_line=False, show_errors=False,
-           show_bars=True)
+createPlot(path_unknown1_v2, path_unknown1_v2_background, do_gaussian=False, show_line=True, show_errors=True,
+           show_bars=False, transform_to_energies=True)
 
 plt.subplots_adjust(top=0.95, bottom=0.1, left=0.07, right=0.95)
 
