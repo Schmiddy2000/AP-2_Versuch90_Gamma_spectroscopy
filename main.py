@@ -35,10 +35,10 @@ path_unknown4 = folder_path + "Unbekannt4_M1.txt"
 path_unknown4_background = folder_path + "Co60_Untergrund_1.txt"
 
 # Transformation:
-transformation_best_a = 19.527092931791685
-transformation_best_a_error = 0.37824305141761233
-transformation_best_c = -40.112818123466205
-transformation_best_c_error = 21.016868706506088
+transformation_best_a = 19.10957832091534
+transformation_best_a_error = 0.06919538902279161
+transformation_best_c = -27.37502577735995
+transformation_best_c_error = 2.6943188365431165
 
 
 def r(x): return round(x, 3)
@@ -68,6 +68,23 @@ def transformToEnergies(x_array, with_errors=False):
         best_energie_error = np.sqrt((x_array * transformation_best_a_error) ** 2
                                      + transformation_best_c_error ** 2)
         return best_energie, best_energie_error
+
+
+# Gaussian error propagation for the 'mean'-energy from 'make_gaussian()'
+def getEnergyError(energy, delta_energy):
+    first = energy * transformation_best_a_error
+    second = transformation_best_a * delta_energy
+
+    return np.sqrt(first ** 2 + second ** 2 + transformation_best_c_error ** 2)
+
+
+def getEnergyErrorByTransformingDeltaMean(delta_energy):
+    a_plus = transformation_best_a + transformation_best_a_error
+    c_plus = transformation_best_c + transformation_best_c_error
+
+    energy_error = delta_energy * a_plus + c_plus
+
+    return energy_error
 
 
 # Calculates the corrected count rate (per second) with errors from both the measurement with and without the
@@ -117,9 +134,16 @@ def make_gaussian(file_path, background_file_path, transform_to_energies=False, 
     x_data = x_data[min_index:max_index]
     y_data = y_data[min_index:max_index]
 
-    mean_guess = x_data[int(np.argmax(y_data))]
-    amplitude_guess = max(y_data)
-    stddev_guess = FWHM / (2 * np.sqrt(2 * np.log(2)))
+    if len(x_data) > 0 and len(y_data) > 0:
+        mean_guess = x_data[int(np.argmax(y_data))]
+        amplitude_guess = max(y_data)
+        stddev_guess = FWHM / (2 * np.sqrt(2 * np.log(2)))
+    else:
+        print("WARNING: \nx_data and/or y_data are empty. Please check if the 'transform_to_energies' parameter is "
+              "set correctly.\n")
+        mean_guess = 1
+        amplitude_guess = 1
+        stddev_guess = FWHM / (2 * np.sqrt(2 * np.log(2)))
 
     initial_guesses = (amplitude_guess, mean_guess, stddev_guess)
 
@@ -132,21 +156,28 @@ def make_gaussian(file_path, background_file_path, transform_to_energies=False, 
               + str(r(initial_guesses[2])) + ')')
 
     # Perform the curve fitting
-    this_popt, pcov = curve_fit(gaussian, x_data, y_data, p0=initial_guesses)
+    if len(x_data) > 0 and len(y_data) > 0:
+        this_popt, pcov = curve_fit(gaussian, x_data, y_data, p0=initial_guesses)
 
-    amplitude_opt, mean_opt, stddev_opt = this_popt
+        amplitude_opt, mean_opt, stddev_opt = this_popt
 
-    amplitude_err = np.sqrt(pcov[0][0])
-    mean_err = np.sqrt(pcov[1][1])
-    stddev_err = np.sqrt(pcov[2][2])
+        amplitude_err = np.sqrt(pcov[0][0])
+        mean_err = np.sqrt(pcov[1][1])
+        stddev_err = np.sqrt(pcov[2][2])
 
-    # (optionally) print the optimized parameters
-    if not disable_print_output:
-        print("Optimized Amplitude:", r(amplitude_opt), '+-', r(amplitude_err))
-        print("Optimized Mean:", r(mean_opt), '+-', r(mean_err))
-        print("Optimized Stddev:", r(stddev_opt), '+-', r(stddev_err))
+        # (optionally) print the optimized parameters
+        if not disable_print_output:
+            print("Optimized Amplitude:", r(amplitude_opt), '+-', r(amplitude_err))
+            print("Optimized Mean:", r(mean_opt), '+-', r(mean_err))
+            print("Optimized Stddev:", r(stddev_opt), '+-', r(stddev_err))
+            print('This yields E =', r(mean_opt), '+-', r(getEnergyErrorByTransformingDeltaMean(mean_opt)))
 
-    this_x_lin = np.linspace(mean_opt - 100, mean_opt + 100)
+        if transform_to_energies:
+            this_x_lin = np.linspace(mean_opt - 100, mean_opt + 100, 1000)
+        else:
+            this_x_lin = np.linspace(mean_opt - 10, mean_opt + 10, 1000)
+    else:
+        return 1, (1, 1, 1)
 
     return this_x_lin, this_popt
 
@@ -203,20 +234,24 @@ def createPlot(file_path, background_file_path, do_gaussian=False, show_errors=T
 
 
 # Plot with linear regression to find a relation between channel number and energy
+# --- Still need to add error bars
 def FitChannelsAndEnergies():
-    channels = np.array([28.178, 66.397, 36.078, 62.395, 70.991])
+    channels = np.array([28.172, 68.392, 36.078, 62.395, 70.991])
     energies = np.array([511, 1277, 662, 1172.6, 1332.75])
+    energy_errors = np.array([0.027, 0.056, 0.021, 0.107, 0.116])
     channel_lin = np.linspace(0, 140)
 
     def lin_model(x, a, c): return a * x + c
 
-    popt_lin, pcov_lin = curve_fit(lin_model, channels, energies)
+    popt_lin, pcov_lin = curve_fit(lin_model, channels, energies, sigma=energy_errors)
 
     best_a = popt_lin[0]
     best_c = popt_lin[1]
+    # best_c = None
 
     best_a_err = np.sqrt(pcov_lin[0][0])
     best_c_err = np.sqrt(pcov_lin[1][1])
+    # best_c_err = None
 
     upper = lin_model(channel_lin, best_a + best_a_err, best_c - best_c_err)
     lower = lin_model(channel_lin, best_a - best_a_err, best_c + best_c_err)
@@ -238,9 +273,9 @@ def FitChannelsAndEnergies():
 
 plt.figure(figsize=(12, 5))
 
-min_channel = 290
-max_channel = 354
-FWHM = 70
+min_channel = 203
+max_channel = 264.5
+FWHM = 85
 
 # FitChannelsAndEnergies()
 
@@ -253,18 +288,30 @@ plt.show()
 
 # Na-22:
 # --- Peak 1:
-# Array indices: [128:156]
+# Array indices: [127:156]
+# min_channel = 25.4, max_channel = 31, FWHM = 3.4
 # Initial guesses: (4.467, 28.2, 1.444)
-# Optimized Amplitude: 4.38399800348803
-# Optimized Mean: 28.178289087889052
-# Optimized Stddev: 2.2036925453995844
+# Optimized Amplitude: 4.373 +- 0.064
+# Optimized Mean: 28.172 +- 0.027
+# Optimized Stddev: 2.221 +- 0.043
+# This yields E = 28.172 +- 23.57
+# -- -- Energies:
+# Array indices: [128:155]
+# min_channel = 460, max_channel = 565, FWHM = 70
+# Initial guesses: (4.467, 510.551, 29.726)
+# Optimized Amplitude: 4.383 +- 0.065
+# Optimized Mean: 510.134 +- 0.529
+# Optimized Stddev: 43.054 +- 0.882
+# This yields E = 510.134 +- 194.371
 
 # --- Peak 2: (Maybe also try a fit for the maybe two peaks)
-# Array indices: [327:358]
-# Initial guesses: (1.653, 67.8, 1.609)
-# Optimized Amplitude: 1.5032818226468205
-# Optimized Mean: 68.39677643280002
-# Optimized Stddev: 2.7276249821754535
+# Array indices: [327:359]
+# min_channel = 65.4, max_channel = 71.6, FWHM = 3.8
+# Initial guesses: (1.653, 67.8, 1.614)
+# Optimized Amplitude: 1.506 +- 0.037
+# Optimized Mean: 68.392 +- 0.056
+# Optimized Stddev: 2.715 +- 0.095
+# This yields E = 68.392 +- 33.348
 
 
 # Cs-137:
@@ -272,26 +319,32 @@ plt.show()
 
 # --- Peak2:
 # Array indices: [161:200]
+# min_channel = 32.2, max_channel = 39.8, FWHM = 3.26
 # Initial guesses: (7.64, 35.4, 1.384)
-# Optimized Amplitude: 7.695428607853561
-# Optimized Mean: 36.07753219323244
-# Optimized Stddev: 2.0108442466204393
+# Optimized Amplitude: 7.695 +- 0.097
+# Optimized Mean: 36.078 +- 0.021
+# Optimized Stddev: 2.011 +- 0.029
+# This yields E = 36.078 +- 25.062
 
 
 # Co-60:
 # --- Peak 1:
 # Array indices: [298:327]
+# min_channel = 59.6, max_channel = 65.2, FWHM = 3.15
 # Initial guesses: (0.747, 62.4, 1.338)
-# Optimized Amplitude: 0.5639292064517797
-# Optimized Mean: 62.39534614179052
-# Optimized Stddev: 2.659880798250231
+# Optimized Amplitude: 0.564 +- 0.027
+# Optimized Mean: 62.395 +- 0.107
+# Optimized Stddev: 2.66 +- 0.194
+# This yields E = 62.395 +- 31.671
 
 # --- Peak 2:
 # Array indices: [338:371]
+# min_channel = 67.6, max_channel = 74, FWHM = 4.97
 # Initial guesses: (0.507, 71.2, 2.111)
-# Optimized Amplitude: 0.42033726173426816
-# Optimized Mean: 70.99116909203838
-# Optimized Stddev: 3.1332700158790696
+# Optimized Amplitude: 0.42 +- 0.018
+# Optimized Mean: 70.991 +- 0.116
+# Optimized Stddev: 3.133 +- 0.216
+# This yields E = 70.991 +- 34.174
 
 # ----- Unknown elements:
 
@@ -307,9 +360,10 @@ plt.show()
 
 # Unknown 1 v2:
 # Peak 1:
-# Array indices: [62:78]
+# Array indices: [60:77]
 # min_channel = 203, max_channel = 264.5, FWHM = 85
-# Initial guesses: (2.667, 213.739, 36.096)
-# Optimized Amplitude: 2.599 +- 0.078
-# Optimized Mean: 229.984 +- 1.522
-# Optimized Stddev: 47.375 +- 4.384
+# Initial guesses: (2.667, 221.049, 36.096)
+# Optimized Amplitude: 2.6 +- 0.073
+# Optimized Mean: 236.53 +- 1.404
+# Optimized Stddev: 46.041 +- 3.601
+# This yields E = 236.53 +- 31.549
