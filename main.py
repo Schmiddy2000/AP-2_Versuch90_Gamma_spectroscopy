@@ -5,6 +5,8 @@ from matplotlib import pyplot as plt
 from scipy.optimize import curve_fit
 
 
+# Loading the data:
+
 folder_path = "/Users/lucas1/Desktop/Uni/Physiklabor A/Physiklabor für Anfänger Teil 2/Versuch 90 - " \
               "Gammaspektroskopie/Materialien/"
 
@@ -32,17 +34,18 @@ path_unknown3_background = folder_path + "Unbekannt1_Untergrund1.txt"
 path_unknown4 = folder_path + "Unbekannt4_M1.txt"
 path_unknown4_background = folder_path + "Co60_Untergrund_1.txt"
 
-# Transformation:
-transformation_best_a = 19.10957832091534
-transformation_best_a_error = 0.06919538902279161
-transformation_best_c = -27.37502577735995
-transformation_best_c_error = 2.6943188365431165
 
-energy_dict = {'U-236': [112.0], 'U-234': [120.0], 'Pb-214': [186.0, 241.0, 295.0, 351.0], 'Pb-212': [238.0],
-               'Ac-228': [338.0, 794.0, 911.0, 964.0, 968.0, 1588.0], 'Tl-208': [510.0, 583.0, 860.0, 2614.0],
-               'Bi-214': [609.0, 768.0, 934.0, 1120.0, 1238.0, 1377.0, 1407.0, 1729.0, 1764.0, 1847.0, 2118.0,
-                          2204.0, 2293.0, 2447.0, 3053.0], 'Bi-212': [727.0],
-               'Pa-234m': [1001.0, 1737.0, 1831.0, 1867.0, 1874.0, 1911.0, 1937.0], 'K-40': [1461.0]}
+# Transformation:
+transformation_best_a = 19.105837666119562
+transformation_best_a_error = 0.08439201148372207
+transformation_best_c = -27.146238702736007
+transformation_best_c_error = 4.2808739156513615
+
+isotope_dict = {'U-236': [112.0], 'U-234': [120.0], 'Pb-214': [186.0, 241.0, 295.0, 351.0], 'Pb-212': [238.0],
+                'Ac-228': [338.0, 794.0, 911.0, 964.0, 968.0, 1588.0], 'Tl-208': [510.0, 583.0, 860.0, 2614.0],
+                'Bi-214': [609.0, 768.0, 934.0, 1120.0, 1238.0, 1377.0, 1407.0, 1729.0, 1764.0, 1847.0, 2118.0,
+                           2204.0, 2293.0, 2447.0, 3053.0], 'Bi-212': [727.0],
+                'Pa-234m': [1001.0, 1737.0, 1831.0, 1867.0, 1874.0, 1911.0, 1937.0], 'K-40': [1461.0]}
 
 
 def r(x): return round(x, 3)
@@ -123,8 +126,8 @@ def gaussian(x, amplitude, mean, stddev):
     return amplitude * np.exp(-((x - mean) / stddev) ** 2)
 
 
-# Function to draw gaussian bell curve and find its optimal parameters. Best guess has to be specified above
-# right below the 'plt.figure' statement
+# Function to draw gaussian bell curve and find its optimal parameters. Best guess has to be specified right above
+# the 'plt.figure' statement
 def makeGaussian(file_path, background_file_path, transform_to_energies=False, disable_print_output=False):
     x_data, y_data, y_data_errors = getCorrectedCountsWithErrors(file_path, background_file_path)
 
@@ -175,7 +178,7 @@ def makeGaussian(file_path, background_file_path, transform_to_energies=False, d
             print("Optimized Amplitude:", r(amplitude_opt), '+-', r(amplitude_err))
             print("Optimized Mean:", r(mean_opt), '+-', r(mean_err))
             print("Optimized Stddev:", r(stddev_opt), '+-', r(stddev_err))
-            print('This yields E =', r(mean_opt), '+-', r(getEnergyErrorByTransformingDeltaMean(mean_opt)))
+            print('This yields E =', r(mean_opt), '+-', r(getEnergyErrorByTransformingDeltaMean(mean_err)))
 
         if transform_to_energies:
             this_x_lin = np.linspace(mean_opt - 100, mean_opt + 100, 1000)
@@ -192,6 +195,10 @@ def createPlot(file_path, background_file_path, do_gaussian=False, show_errors=T
                show_dots=False, show_bars=False, upper_x_lim=None, transform_to_energies=False):
     name_pre = file_path.split('/')
     name = name_pre[len(name_pre) - 1].split('.')[0]
+
+    if show_bars:
+        show_errors = False
+        show_line = False
 
     plt.title('Spektrum der Kanäle von ' + name)
     plt.xlabel('Kanalnummer (in 0,2er Schritten)')
@@ -214,7 +221,9 @@ def createPlot(file_path, background_file_path, do_gaussian=False, show_errors=T
         plt.plot(x_range, count_rate, lw=0.4, c='black', label='Verbindungslinie')
 
     if show_bars:
-        plt.bar(x_range, count_rate, width=0.2, color='black', label='Korrigierte Zählrate')
+        bar_width = 1.05 * max(x_range) / len(x_range)
+        print(bar_width)
+        plt.bar(x_range, count_rate, width=bar_width, color='black', label='Korrigierte Zählrate')
         plt.ylim(0, None)
 
     if show_dots:
@@ -239,12 +248,11 @@ def createPlot(file_path, background_file_path, do_gaussian=False, show_errors=T
 
 
 # Plot with linear regression to find a relation between channel number and energy
-# --- Still need to add error bars
 def FitChannelsAndEnergies():
     channels = np.array([28.172, 68.392, 36.078, 62.395, 70.991])
     energies = np.array([511, 1277, 662, 1172.6, 1332.75])
     channel_error = np.array([0.027, 0.056, 0.021, 0.107, 0.116])
-    energy_errors = np.zeros(len(energies)) + 1
+    energy_errors = np.array([1, 1, 1, 2, 2]) / np.sqrt(3)
     channel_lin = np.linspace(0, 140)
 
     def lin_model(x, a, c): return a * x + c
@@ -297,15 +305,19 @@ def plotElementVLines(element_identifiers):
 #         plt.vlines(energy, 0, 3, ls='--', lw=0.5, colors='black')
 
 
-plt.figure(figsize=(12, 5))
-
+# Set initial parameter guesses for 'makeGaussian()'
 min_channel = 203
 max_channel = 264.5
 FWHM = 85
 
-FitChannelsAndEnergies()
 
-# createPlot(path_unknown1_v2, path_unknown1_v2_background, do_gaussian=True, transform_to_energies=True)
+# Plotting:
+plt.figure(figsize=(12, 5))
+
+# FitChannelsAndEnergies()
+
+createPlot(path_unknown1_v2, path_unknown1_v2_background, do_gaussian=True, transform_to_energies=True,
+           show_bars=True)
 
 plt.subplots_adjust(top=0.95, bottom=0.1, left=0.07, right=0.95)
 
