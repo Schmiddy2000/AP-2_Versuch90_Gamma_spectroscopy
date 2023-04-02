@@ -35,24 +35,16 @@ path_unknown4 = folder_path + "Unbekannt4_M1.txt"
 path_unknown4_background = folder_path + "Co60_Untergrund_1.txt"
 
 # Transformation:
-
 transformation_best_a = 19.527092931791685
 transformation_best_a_error = 0.37824305141761233
 transformation_best_c = -40.112818123466205
 transformation_best_c_error = 21.016868706506088
 
 
-def transformToEnergies(x_array, with_errors=False):
-    best_energie = transformation_best_a * x_array + transformation_best_c
-
-    if with_errors:
-        best_energie_error = np.sqrt((x_array * transformation_best_a_error) ** 2
-                                     + transformation_best_c_error ** 2)
-        return best_energie, best_energie_error
-    else:
-        return best_energie
+def r(x): return round(x, 3)
 
 
+# Read the data from .tsv
 def getDataframe(file_path):
     with open(file_path, 'rb') as f:
         result = chardet.detect(f.read())
@@ -62,9 +54,24 @@ def getDataframe(file_path):
     return df
 
 
+# Creates the x-axis as specified in the initial .tsv files
 def getChannelNumbers(df_counts): return np.arange(0, len(df_counts) / 5, 0.2)
 
 
+# Transform channel numbers to (predicted) energies (in keV)
+def transformToEnergies(x_array, with_errors=False):
+    best_energie = transformation_best_a * x_array + transformation_best_c
+
+    if not with_errors:
+        return best_energie
+    else:
+        best_energie_error = np.sqrt((x_array * transformation_best_a_error) ** 2
+                                     + transformation_best_c_error ** 2)
+        return best_energie, best_energie_error
+
+
+# Calculates the corrected count rate (per second) with errors from both the measurement with and without the
+# radiation source
 def getCorrectedCountsWithErrors(file_path, background_file_path, measurement_time=75,
                                  background_measurement_time=150):
     time_ratio = measurement_time / background_measurement_time
@@ -89,14 +96,64 @@ def getCorrectedCountsWithErrors(file_path, background_file_path, measurement_ti
     return corrected_count_rate_range, corrected_count_rate, corrected_count_rate_error
 
 
-# counts_array = np.array([Na22_counts, Co60_counts, Cs137_counts])
-# range_array = np.array([Na22_range, Co60_range, Cs137_range])
-# label_array = np.array(["Na-22", "Co-60", "Cs-137"])
+# Function to describe a gaussian bell curve
+def gaussian(x, amplitude, mean, stddev):
+    return amplitude * np.exp(-((x - mean) / stddev) ** 2)
 
 
+# Function to draw gaussian bell curve and find its optimal parameters. Best guess has to be specified above
+# right below the 'plt.figure' statement
+def make_gaussian(file_path, background_file_path, transform_to_energies=False, disable_print_output=False):
+    x_data, y_data, y_data_errors = getCorrectedCountsWithErrors(file_path, background_file_path)
+
+    if transform_to_energies:
+        x_data = transformToEnergies(x_data)
+        min_index = int(5 * ((min_channel - transformation_best_c) / transformation_best_a))
+        max_index = int(5 * ((max_channel - transformation_best_c) / transformation_best_a)) + 1
+    else:
+        min_index = int(min_channel * 5)
+        max_index = int(max_channel * 5) + 1
+
+    x_data = x_data[min_index:max_index]
+    y_data = y_data[min_index:max_index]
+
+    mean_guess = x_data[int(np.argmax(y_data))]
+    amplitude_guess = max(y_data)
+    stddev_guess = FWHM / (2 * np.sqrt(2 * np.log(2)))
+
+    initial_guesses = (amplitude_guess, mean_guess, stddev_guess)
+
+    # (optionally) print run information:
+    if not disable_print_output:
+        print('Array indices:', str('[') + str(min_index) + ':' + str(int(max_index)) + str(']'))
+        print('min_channel = ' + str(min_channel), 'max_channel = ' + str(max_channel), 'FWHM = ' + str(FWHM),
+              sep=', ')
+        print('Initial guesses:', '(' + str(r(initial_guesses[0])) + ', ' + str(r(initial_guesses[1])) + ', '
+              + str(r(initial_guesses[2])) + ')')
+
+    # Perform the curve fitting
+    this_popt, pcov = curve_fit(gaussian, x_data, y_data, p0=initial_guesses)
+
+    amplitude_opt, mean_opt, stddev_opt = this_popt
+
+    amplitude_err = np.sqrt(pcov[0][0])
+    mean_err = np.sqrt(pcov[1][1])
+    stddev_err = np.sqrt(pcov[2][2])
+
+    # (optionally) print the optimized parameters
+    if not disable_print_output:
+        print("Optimized Amplitude:", r(amplitude_opt), '+-', r(amplitude_err))
+        print("Optimized Mean:", r(mean_opt), '+-', r(mean_err))
+        print("Optimized Stddev:", r(stddev_opt), '+-', r(stddev_err))
+
+    this_x_lin = np.linspace(mean_opt - 100, mean_opt + 100)
+
+    return this_x_lin, this_popt
+
+
+# Create a visualisation of the .tsv files. Optionals let you choose the type of plot and other features
 def createPlot(file_path, background_file_path, do_gaussian=False, show_errors=True, show_line=True,
                show_dots=False, show_bars=False, upper_x_lim=None, transform_to_energies=False):
-
     name_pre = file_path.split('/')
     name = name_pre[len(name_pre) - 1].split('.')[0]
 
@@ -108,6 +165,7 @@ def createPlot(file_path, background_file_path, do_gaussian=False, show_errors=T
 
     if transform_to_energies:
         x_range = transformToEnergies(x_range)
+        plt.xlabel('Energie in [keV]')
 
     if show_errors:
         upper = count_rate + count_rate_error
@@ -144,52 +202,7 @@ def createPlot(file_path, background_file_path, do_gaussian=False, show_errors=T
     return None
 
 
-def gaussian(x, amplitude, mean, stddev):
-    return amplitude * np.exp(-((x - mean) / stddev) ** 2)
-
-
-def r(x): return round(x, 3)
-
-
-def make_gaussian(file_path, background_file_path, transform_to_energies=False):
-    # Example x and y data (replace these with your actual data points)
-    x_data, y_data, y_data_errors = getCorrectedCountsWithErrors(file_path, background_file_path)
-
-    if transform_to_energies:
-        x_data = transformToEnergies(x_data)
-
-    min_index = int(min_channel * 5)
-    max_index = int(max_channel * 5) + 1
-    x_data = x_data[min_index:max_index]
-    y_data = y_data[min_index:max_index]
-
-    mean_guess = x_data[np.argmax(y_data)]
-    amplitude_guess = max(y_data)
-    stddev_guess = FWHM / (2 * np.sqrt(2 * np.log(2)))
-
-    initial_guesses = (amplitude_guess, mean_guess, stddev_guess)
-
-    # Print run information:
-    print('Array indices:', str('[') + str(int(min(x_data) * 5)) + ':' + str(int(max(x_data) * 5 + 1)) + str(']'))
-    print('Initial guesses:', '(' + str(r(initial_guesses[0])) + ', ' + str(r(initial_guesses[1])) + ', '
-          + str(r(initial_guesses[2])) + ')')
-
-    # Perform the curve fitting
-    this_popt, pcov = curve_fit(gaussian, x_data, y_data, p0=initial_guesses)
-
-    # popt contains the optimized parameters: [amplitude, mean, stddev]
-    amplitude_opt, mean_opt, stddev_opt = this_popt
-
-    # Print the optimized parameters
-    print("Optimized Amplitude:", amplitude_opt)
-    print("Optimized Mean:", mean_opt)
-    print("Optimized Stddev:", stddev_opt)
-
-    this_x_lin = np.linspace(mean_opt - 10, mean_opt + 10)
-
-    return this_x_lin, this_popt
-
-
+# Plot with linear regression to find a relation between channel number and energy
 def FitChannelsAndEnergies():
     channels = np.array([28.178, 66.397, 36.078, 62.395, 70.991])
     energies = np.array([511, 1277, 662, 1172.6, 1332.75])
@@ -208,6 +221,10 @@ def FitChannelsAndEnergies():
     upper = lin_model(channel_lin, best_a + best_a_err, best_c - best_c_err)
     lower = lin_model(channel_lin, best_a - best_a_err, best_c + best_c_err)
 
+    plt.title('Kanalnummer gegen Energie')
+    plt.xlabel('Kanalnummer')
+    plt.ylabel('Energie in [keV]')
+
     plt.fill_between(channel_lin, upper, lower, where=upper >= lower, interpolate=True, color='pink', alpha=0.5)
     plt.fill_between(channel_lin, upper, lower, where=upper < lower, interpolate=True, color='pink', alpha=0.5)
 
@@ -221,20 +238,18 @@ def FitChannelsAndEnergies():
 
 plt.figure(figsize=(12, 5))
 
-min_channel = 70
-max_channel = 82.4
-FWHM = 5.3
+min_channel = 290
+max_channel = 354
+FWHM = 70
 
 # FitChannelsAndEnergies()
 
-createPlot(path_unknown1_v2, path_unknown1_v2_background, do_gaussian=False, show_line=True, show_errors=True,
-           show_bars=False, transform_to_energies=True)
+createPlot(path_unknown1_v2, path_unknown1_v2_background, do_gaussian=True, transform_to_energies=True)
 
 plt.subplots_adjust(top=0.95, bottom=0.1, left=0.07, right=0.95)
 
 # plt.savefig('Co-66_gamma_spectrum.png', dpi=300)
 plt.show()
-
 
 # Na-22:
 # --- Peak 1:
@@ -290,4 +305,11 @@ plt.show()
 # Optimized Mean: 76.1656184330993
 # Optimized Stddev: 5.957252853489777
 
-
+# Unknown 1 v2:
+# Peak 1:
+# Array indices: [62:78]
+# min_channel = 203, max_channel = 264.5, FWHM = 85
+# Initial guesses: (2.667, 213.739, 36.096)
+# Optimized Amplitude: 2.599 +- 0.078
+# Optimized Mean: 229.984 +- 1.522
+# Optimized Stddev: 47.375 +- 4.384
