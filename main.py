@@ -4,8 +4,6 @@ import numpy as np
 from matplotlib import pyplot as plt
 from scipy.optimize import curve_fit
 
-# import requests
-# from io import StringIO
 
 folder_path = "/Users/lucas1/Desktop/Uni/Physiklabor A/Physiklabor für Anfänger Teil 2/Versuch 90 - " \
               "Gammaspektroskopie/Materialien/"
@@ -40,6 +38,12 @@ transformation_best_a_error = 0.06919538902279161
 transformation_best_c = -27.37502577735995
 transformation_best_c_error = 2.6943188365431165
 
+energy_dict = {'U-236': [112.0], 'U-234': [120.0], 'Pb-214': [186.0, 241.0, 295.0, 351.0], 'Pb-212': [238.0],
+               'Ac-228': [338.0, 794.0, 911.0, 964.0, 968.0, 1588.0], 'Tl-208': [510.0, 583.0, 860.0, 2614.0],
+               'Bi-214': [609.0, 768.0, 934.0, 1120.0, 1238.0, 1377.0, 1407.0, 1729.0, 1764.0, 1847.0, 2118.0,
+                          2204.0, 2293.0, 2447.0, 3053.0], 'Bi-212': [727.0],
+               'Pa-234m': [1001.0, 1737.0, 1831.0, 1867.0, 1874.0, 1911.0, 1937.0], 'K-40': [1461.0]}
+
 
 def r(x): return round(x, 3)
 
@@ -70,7 +74,7 @@ def transformToEnergies(x_array, with_errors=False):
         return best_energie, best_energie_error
 
 
-# Gaussian error propagation for the 'mean'-energy from 'make_gaussian()'
+# Gaussian error propagation for the 'mean'-energy from 'makeGaussian()'
 def getEnergyError(energy, delta_energy):
     first = energy * transformation_best_a_error
     second = transformation_best_a * delta_energy
@@ -78,6 +82,7 @@ def getEnergyError(energy, delta_energy):
     return np.sqrt(first ** 2 + second ** 2 + transformation_best_c_error ** 2)
 
 
+# Updated (and hopefully correct) version to calculate the energy errors
 def getEnergyErrorByTransformingDeltaMean(delta_energy):
     a_plus = transformation_best_a + transformation_best_a_error
     c_plus = transformation_best_c + transformation_best_c_error
@@ -120,7 +125,7 @@ def gaussian(x, amplitude, mean, stddev):
 
 # Function to draw gaussian bell curve and find its optimal parameters. Best guess has to be specified above
 # right below the 'plt.figure' statement
-def make_gaussian(file_path, background_file_path, transform_to_energies=False, disable_print_output=False):
+def makeGaussian(file_path, background_file_path, transform_to_energies=False, disable_print_output=False):
     x_data, y_data, y_data_errors = getCorrectedCountsWithErrors(file_path, background_file_path)
 
     if transform_to_energies:
@@ -224,9 +229,9 @@ def createPlot(file_path, background_file_path, do_gaussian=False, show_errors=T
 
     if do_gaussian:
         if transform_to_energies:
-            x_lin, popt = make_gaussian(file_path, background_file_path, transform_to_energies)
+            x_lin, popt = makeGaussian(file_path, background_file_path, transform_to_energies)
         else:
-            x_lin, popt = make_gaussian(file_path, background_file_path)
+            x_lin, popt = makeGaussian(file_path, background_file_path)
 
         plt.plot(x_lin, gaussian(x_lin, *popt), lw=1, ls='--', c='r')
 
@@ -238,7 +243,8 @@ def createPlot(file_path, background_file_path, do_gaussian=False, show_errors=T
 def FitChannelsAndEnergies():
     channels = np.array([28.172, 68.392, 36.078, 62.395, 70.991])
     energies = np.array([511, 1277, 662, 1172.6, 1332.75])
-    energy_errors = np.array([0.027, 0.056, 0.021, 0.107, 0.116])
+    channel_error = np.array([0.027, 0.056, 0.021, 0.107, 0.116])
+    energy_errors = np.zeros(len(energies)) + 1
     channel_lin = np.linspace(0, 140)
 
     def lin_model(x, a, c): return a * x + c
@@ -257,18 +263,38 @@ def FitChannelsAndEnergies():
     lower = lin_model(channel_lin, best_a - best_a_err, best_c + best_c_err)
 
     plt.title('Kanalnummer gegen Energie')
-    plt.xlabel('Kanalnummer')
+    plt.xlabel('Kanalnummer (in 0,2er Schritten)')
     plt.ylabel('Energie in [keV]')
 
     plt.fill_between(channel_lin, upper, lower, where=upper >= lower, interpolate=True, color='pink', alpha=0.5)
-    plt.fill_between(channel_lin, upper, lower, where=upper < lower, interpolate=True, color='pink', alpha=0.5)
+    plt.fill_between(channel_lin, upper, lower, where=upper < lower, interpolate=True, color='pink', alpha=0.5,
+                     label='Konfidenzband')
 
-    plt.plot(channel_lin, lin_model(channel_lin, *popt_lin), lw=1, ls='--', c='black')
+    plt.errorbar(channels, energies, xerr=channel_error, yerr=energy_errors, fmt='none',
+                 capthick=0.8, capsize=5, elinewidth=0.8, ecolor='black', label='Fehler')
+
+    plt.plot(channel_lin, lin_model(channel_lin, *popt_lin), lw=1, ls='--', c='black', label='Ausgleichsgerade')
     print('a =', best_a, '+-', best_a_err, '\nc =', best_c, '+-', best_c_err)
 
-    plt.scatter(channels, energies, marker='x', c='b')
+    plt.scatter(channels, energies, marker='x', c='magenta', label='Bestwerte')
+
+    plt.xlim(22, 75)
+    plt.ylim(400, 1400)
+    plt.legend()
+
+    plt.savefig('LinReg_Kanalnummer_gegen_Energie.png', dpi=300)
 
     return best_a, best_c, best_a_err, best_c_err
+
+
+def plotElementVLines(element_identifiers):
+    for element in element_identifiers:
+        plt.vlines()
+
+
+# for element in energy_dict:
+#     for energy in energy_dict[element]:
+#         plt.vlines(energy, 0, 3, ls='--', lw=0.5, colors='black')
 
 
 plt.figure(figsize=(12, 5))
@@ -277,9 +303,9 @@ min_channel = 203
 max_channel = 264.5
 FWHM = 85
 
-# FitChannelsAndEnergies()
+FitChannelsAndEnergies()
 
-createPlot(path_unknown1_v2, path_unknown1_v2_background, do_gaussian=True, transform_to_energies=True)
+# createPlot(path_unknown1_v2, path_unknown1_v2_background, do_gaussian=True, transform_to_energies=True)
 
 plt.subplots_adjust(top=0.95, bottom=0.1, left=0.07, right=0.95)
 
